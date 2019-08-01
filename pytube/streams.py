@@ -177,7 +177,8 @@ class Stream(object):
         filename = safe_filename(title)
         return '{filename}.{s.subtype}'.format(filename=filename, s=self)
 
-    def download(self, output_path=None, filename=None, filename_prefix=None):
+    def download(self, output_path=None, filename=None, filename_prefix=None,
+                 overwrite=False):
         """Write the media stream to disk.
 
         :param output_path:
@@ -214,6 +215,12 @@ class Stream(object):
 
         # file path
         fp = os.path.join(output_path, filename)
+        
+        # When conflicting name, only download if asked to.
+        should_download = overwrite or not os.path.exists(fp)
+        if not should_download:
+            return fp
+        
         bytes_remaining = self.filesize
         logger.debug(
             'downloading (%s total bytes) file to %s',
@@ -227,6 +234,25 @@ class Stream(object):
                 # send to the on_progress callback.
                 self.on_progress(chunk, fh, bytes_remaining)
         self.on_complete(fh)
+        return fp
+
+    def destination_filepath(self, output_path=None, filename=None,
+                             filename_prefix=None):
+        output_path = output_path or os.getcwd()
+        if filename:
+            safe = safe_filename(filename)
+            filename = '{filename}.{s.subtype}'.format(filename=safe, s=self)
+        filename = filename or self.default_filename
+
+        if filename_prefix:
+            filename = '{prefix}{filename}'\
+                .format(
+                    prefix=safe_filename(filename_prefix),
+                    filename=filename,
+                )
+
+        # file path
+        fp = os.path.join(output_path, filename)
         return fp
 
     def stream_to_buffer(self):
