@@ -27,7 +27,7 @@ def main():
         version='%(prog)s ' + __version__,
     )
     parser.add_argument(
-        '--itag', type=int, help=(
+        '-i', '--itag', type=int, help=(
             'The itag for the desired stream'
         ),
     )
@@ -35,6 +35,18 @@ def main():
         '-l', '--list', action='store_true', help=(
             'The list option causes pytube cli to return a list of streams '
             'available to download'
+        ),
+    )
+    parser.add_argument(
+        '-p', '--progressive', action='store_true', help=(
+            'to use with the --list option: filters to only show progressive '
+            'versions available to download'
+        ),
+    )
+    parser.add_argument(
+        '-o', '--overwrite', action='store_true', help=(
+            'Overwrite existing file. Default will not start the download if '
+            'there is already a file with the same path'
         ),
     )
     parser.add_argument(
@@ -55,13 +67,14 @@ def main():
         sys.exit(1)
 
     if args.list:
-        display_streams(args.url)
+        f_progr = args.progressive if args.progressive is not None else None
+        display_streams(args.url, progressive=f_progr)
 
     elif args.build_playback_report:
         build_playback_report(args.url)
 
     elif args.itag:
-        download(args.url, args.itag)
+        download(args.url, args.itag, args.overwrite)
 
 
 def build_playback_report(url):
@@ -148,7 +161,7 @@ def on_progress(stream, chunk, file_handle, bytes_remaining):
     display_progress_bar(bytes_received, filesize)
 
 
-def download(url, itag):
+def download(url, itag, overwrite=False):
     """Start downloading a YouTube video.
 
     :param str url:
@@ -166,13 +179,23 @@ def download(url, itag):
         fs=stream.filesize,
     ))
     try:
-        stream.download()
+        fpath = stream.destination_filepath()
+        ### We do NOT try to download if there is already a *non-empty* file
+        ### or if the user has NOT specifies the overwrite option
+        if os.path.exists(fpath) and (os.stat(fpath).st_size > 0) and not overwrite:
+            print("-> A non-empty file already exists and overwriting is "
+                  "disabled. Not downloading."
+                  )
+        else:
+            should_overwrite = overwrite or (os.path.exists(fpath) and os.stat(fpath).st_size == 0)
+            print("Trying to initiate the download... (overwriting: %s)" % (should_overwrite))
+            stream.download(overwrite=should_overwrite)
         sys.stdout.write('\n')
     except KeyboardInterrupt:
         sys.exit()
 
 
-def display_streams(url):
+def display_streams(url, progressive=None):
     """Probe YouTube video and lists its available formats.
 
     :param str url:
@@ -180,7 +203,11 @@ def display_streams(url):
 
     """
     yt = YouTube(url)
-    for stream in yt.streams.all():
+    streams = yt.streams
+    # if progressive filtering is specified, filter accordingly
+    if (progressive is not None):
+        streams = streams.filter(progressive=progressive)
+    for stream in streams.all():
         print(stream)
 
 
